@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=True
+      - LOG_LEVEL=INFO
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=rag-chatbot
+      - PINECONE_ENVIRONMENT=us-east-1-aws
+      - DATABASE_PATH=/app/users.db
+      - ALLOWED_ORIGINS=["http://localhost:3000"]
+    volumes:
+      - ./Backend:/app
+      - rag-db:/app/data
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - pinecone
+    networks:
+      - rag-network
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NODE_ENV=development
+    volumes:
+      - ./Frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    depends_on:
+      - backend
+    networks:
+      - rag-network
+
+  pinecone:
+    image: milvusdb/milvus:v0.11.0
+    ports:
+      - "19530:19530"
+      - "19121:19121"
+    environment:
+      - COMMON_STORAGETYPE=local
+    volumes:
+      - pinecone-data:/var/lib/milvus
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19121"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  rag-db:
+  pinecone-data:
+
+networks:
+  rag-network:
+    driver: bridge
